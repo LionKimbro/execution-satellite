@@ -1,0 +1,530 @@
+{
+"document": {
+"document-id": "stickerdb.execution-satellite.protocol.softspec.v1",
+"title": "StickerDB Execution Satellite Communication Protocol SoftSpec",
+"tags": [
+"stickerdb",
+"execution-satellite",
+"softspec",
+"json",
+"protocol",
+"request",
+"response",
+"job-cell"
+],
+"purpose": "Describe the JSON request and response protocol used between StickerDB and an execution satellite.",
+"author": [
+"Lion Kimbro",
+"Wing-Cat"
+],
+"status": "draft",
+"created": "2026-06-19"
+},
+
+"overview": {
+"description": "This protocol lets StickerDB request work from an execution satellite by writing JSON request files. The request includes full paths for inputs, outputs, expiration, and response callback. The execution satellite performs the requested job when the operator runs it, then writes a response JSON file to the request's response_path.",
+"style": "SoftSpec: descriptive over rigid validation. This document describes the intended meanings and structures, while allowing the protocol to evolve."
+},
+
+"v1-jobs": {
+"layout_sticker_to_lds": {
+"description": "Given a sticker image, create an LDS file.",
+"input": [
+"sticker_image_path"
+],
+"output": [
+"lds_file_path"
+]
+},
+
+"print_lds_file": {
+  "description": "Given an LDS file, print it through Leonardo Design Studio using InputLog automation.",
+  "input": [
+    "lds_file_path"
+  ],
+  "output": []
+}
+
+},
+
+"core-rules": [
+"The request JSON is owned by the requester.",
+"The requester owns the entire requester-side job cell.",
+"The requester owns cleanup of requester-side files.",
+"The satellite may keep and clean its own local copies, inbox entries, logs, and execution records.",
+"The request contains a full response_path.",
+"The request contains expires_at.",
+"Input and output paths in request JSON should be full absolute paths.",
+"The satellite may read requester-owned input paths.",
+"The satellite may write requester-specified output paths.",
+"The satellite writes response JSON to response_path.",
+"The satellite does not delete requester-owned files.",
+"After expires_at, the satellite may drop or ignore the job from its own side.",
+"On interruption or abnormal InputLog result, the satellite stops the queue and waits for operator decision."
+],
+
+"softspec": {
+"types": {
+"schema-id": {
+"type": "string",
+"semantic_type": "schema-id",
+"description": "Identifies the protocol schema used by a JSON document.",
+"examples": [
+"stickerdb.execution_satellite.request.v1",
+"stickerdb.execution_satellite.response.v1"
+]
+},
+
+  "job-id": {
+    "type": "string",
+    "semantic_type": "job-id",
+    "description": "A unique identifier for the execution job.",
+    "examples": [
+      "job-ed3fa723",
+      "job-2026-06-19-001"
+    ],
+    "notes": [
+      "The job_id should be stable across request, response, and related files.",
+      "The job_id may include a short random identifier or timestamp-based identifier."
+    ]
+  },
+
+  "job-name": {
+    "type": "string",
+    "semantic_type": "execution-satellite-job-name",
+    "description": "The named operation the satellite should perform.",
+    "vocabulary_mode": "closed-for-v1",
+    "vocabulary": {
+      "layout_sticker_to_lds": "Create an LDS file from a sticker image.",
+      "print_lds_file": "Print an existing LDS file through Leonardo Design Studio."
+    }
+  },
+
+  "timestamp": {
+    "type": "string",
+    "semantic_type": "timestamp",
+    "description": "An ISO-8601-style timestamp with timezone when possible.",
+    "examples": [
+      "2026-06-19T08:50:00-07:00",
+      "2026-06-20T08:50:00-07:00"
+    ]
+  },
+
+  "absolute-file-path": {
+    "type": "string",
+    "semantic_type": "absolute-file-path",
+    "description": "A full filesystem path. On Windows, this will usually include a drive letter.",
+    "examples": [
+      "F:/sticker-db/.stickerdb/jobs/ed3fa723/request-args/sticker.png",
+      "F:/sticker-db/.stickerdb/jobs/ed3fa723/response-data/generated-sheet.lds"
+    ],
+    "notes": [
+      "Forward slashes are acceptable in JSON even on Windows.",
+      "The satellite should not require paths to be relative to its current working directory."
+    ]
+  },
+
+  "response-status": {
+    "type": "string",
+    "semantic_type": "response-status",
+    "description": "The overall result status of the job as reported by the satellite.",
+    "vocabulary_mode": "closed-for-v1",
+    "vocabulary": {
+      "done": "The satellite completed the job normally according to what it can observe.",
+      "failed": "The job did not complete and should be treated as failed.",
+      "expired": "The satellite considered the job too old to run.",
+      "interrupted": "Execution was interrupted, usually by user mouse or keyboard activity."
+    }
+  },
+
+  "error-kind": {
+    "type": "string",
+    "semantic_type": "error-kind",
+    "description": "A short machine-readable description of the failure or abnormal condition.",
+    "examples": [
+      "inputlog_interrupted",
+      "expired",
+      "missing_input_file",
+      "output_write_failed",
+      "unknown_job"
+    ]
+  }
+},
+
+"schemas": {
+  "request": {
+    "title": "Execution Satellite Request",
+    "description": "A JSON object written by the requester to ask an execution satellite to perform a job.",
+    "rules": [
+      "The requester owns the request file.",
+      "The request must include response_path.",
+      "The request must include expires_at.",
+      "The request should use full absolute paths for files.",
+      "The request should be treated as immutable after being submitted to the satellite."
+    ],
+    "structure": {
+      "type": "object",
+      "keys": {
+        "schema": {
+          "type": "schema-id",
+          "required": true,
+          "description": "Protocol schema for this request.",
+          "examples": [
+            "stickerdb.execution_satellite.request.v1"
+          ]
+        },
+
+        "job_id": {
+          "type": "job-id",
+          "required": true,
+          "description": "Stable identifier for this job."
+        },
+
+        "job": {
+          "type": "job-name",
+          "required": true,
+          "description": "The operation the satellite should perform."
+        },
+
+        "created_at": {
+          "type": "timestamp",
+          "required": true,
+          "description": "When the request was created."
+        },
+
+        "expires_at": {
+          "type": "timestamp",
+          "required": true,
+          "description": "After this time, the satellite may drop or ignore the job from its own side."
+        },
+
+        "input": {
+          "type": "object",
+          "required": true,
+          "description": "Job-specific input arguments, usually full paths to requester-owned files.",
+          "additional_keys": {
+            "type": "absolute-file-path",
+            "description": "Input path or value. For v1, expected keys depend on the job."
+          }
+        },
+
+        "output": {
+          "type": "object",
+          "required": "required when the job produces requester-visible output files",
+          "description": "Job-specific output paths where the requester wants generated files written.",
+          "additional_keys": {
+            "type": "absolute-file-path",
+            "description": "Output file path requested by the requester."
+          }
+        },
+
+        "response_path": {
+          "type": "absolute-file-path",
+          "required": true,
+          "description": "Full path where the satellite should write the response JSON."
+        }
+      },
+      "additional_keys": true
+    }
+  },
+
+  "layout-sticker-to-lds-request": {
+    "title": "layout_sticker_to_lds Request",
+    "description": "Request form for creating an LDS file from a sticker image.",
+    "structure": {
+      "type": "object",
+      "keys": {
+        "schema": {
+          "type": "schema-id",
+          "required": true
+        },
+        "job_id": {
+          "type": "job-id",
+          "required": true
+        },
+        "job": {
+          "type": "string",
+          "required": true,
+          "constraints": {
+            "allowed_values": [
+              "layout_sticker_to_lds"
+            ]
+          }
+        },
+        "created_at": {
+          "type": "timestamp",
+          "required": true
+        },
+        "expires_at": {
+          "type": "timestamp",
+          "required": true
+        },
+        "input": {
+          "type": "object",
+          "required": true,
+          "keys": {
+            "sticker_image_path": {
+              "type": "absolute-file-path",
+              "required": true,
+              "description": "Path to the sticker image to lay out."
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": true,
+          "keys": {
+            "lds_file_path": {
+              "type": "absolute-file-path",
+              "required": true,
+              "description": "Path where the generated LDS file should be written."
+            }
+          }
+        },
+        "response_path": {
+          "type": "absolute-file-path",
+          "required": true
+        }
+      },
+      "additional_keys": true
+    }
+  },
+
+  "print-lds-file-request": {
+    "title": "print_lds_file Request",
+    "description": "Request form for printing an existing LDS file through Leonardo Design Studio.",
+    "structure": {
+      "type": "object",
+      "keys": {
+        "schema": {
+          "type": "schema-id",
+          "required": true
+        },
+        "job_id": {
+          "type": "job-id",
+          "required": true
+        },
+        "job": {
+          "type": "string",
+          "required": true,
+          "constraints": {
+            "allowed_values": [
+              "print_lds_file"
+            ]
+          }
+        },
+        "created_at": {
+          "type": "timestamp",
+          "required": true
+        },
+        "expires_at": {
+          "type": "timestamp",
+          "required": true
+        },
+        "input": {
+          "type": "object",
+          "required": true,
+          "keys": {
+            "lds_file_path": {
+              "type": "absolute-file-path",
+              "required": true,
+              "description": "Path to the LDS file to print."
+            }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": false,
+          "description": "Usually empty or omitted for print_lds_file."
+        },
+        "response_path": {
+          "type": "absolute-file-path",
+          "required": true
+        }
+      },
+      "additional_keys": true
+    }
+  },
+
+  "response": {
+    "title": "Execution Satellite Response",
+    "description": "A JSON object written by the execution satellite to response_path after job completion, expiration, interruption resolution, or failure.",
+    "rules": [
+      "The response should report what the satellite actually knows.",
+      "A normal InputLog completion does not prove that a physical print is correct.",
+      "The response should be written to the request's response_path.",
+      "The satellite may also keep its own copy of the response in satellite-owned records."
+    ],
+    "structure": {
+      "type": "object",
+      "keys": {
+        "schema": {
+          "type": "schema-id",
+          "required": true,
+          "examples": [
+            "stickerdb.execution_satellite.response.v1"
+          ]
+        },
+
+        "job_id": {
+          "type": "job-id",
+          "required": true
+        },
+
+        "job": {
+          "type": "job-name",
+          "required": true
+        },
+
+        "ok": {
+          "type": "boolean",
+          "required": true,
+          "description": "True when the satellite considers the job completed successfully."
+        },
+
+        "status": {
+          "type": "response-status",
+          "required": true,
+          "description": "Overall status of the job."
+        },
+
+        "message": {
+          "type": "string",
+          "required": true,
+          "description": "Human-readable summary of what happened."
+        },
+
+        "started_at": {
+          "type": "timestamp",
+          "required": false
+        },
+
+        "finished_at": {
+          "type": "timestamp",
+          "required": false
+        },
+
+        "outputs": {
+          "type": "object",
+          "required": false,
+          "description": "Output paths or output facts produced by the job.",
+          "additional_keys": true
+        },
+
+        "error": {
+          "type": "object",
+          "required": false,
+          "nullable": true,
+          "description": "Failure details when ok is false.",
+          "keys": {
+            "kind": {
+              "type": "error-kind",
+              "required": true
+            },
+            "message": {
+              "type": "string",
+              "required": true
+            }
+          },
+          "additional_keys": true
+        },
+
+        "observations": {
+          "type": "array",
+          "required": false,
+          "description": "Things the satellite observed, as distinct from business certainty.",
+          "items": "string"
+        }
+      },
+      "additional_keys": true
+    }
+  }
+}
+
+},
+
+"examples": {
+"layout-sticker-to-lds-request": {
+"schema": "stickerdb.execution_satellite.request.v1",
+"job_id": "job-ed3fa723",
+"job": "layout_sticker_to_lds",
+"created_at": "2026-06-19T08:50:00-07:00",
+"expires_at": "2026-06-20T08:50:00-07:00",
+"input": {
+"sticker_image_path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/request-args/sticker.png"
+},
+"output": {
+"lds_file_path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/response-data/generated-sheet.lds"
+},
+"response_path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/jobctrl/response.json"
+},
+
+"layout-sticker-to-lds-success-response": {
+  "schema": "stickerdb.execution_satellite.response.v1",
+  "job_id": "job-ed3fa723",
+  "job": "layout_sticker_to_lds",
+  "ok": true,
+  "status": "done",
+  "message": "Created LDS file.",
+  "started_at": "2026-06-19T09:01:00-07:00",
+  "finished_at": "2026-06-19T09:01:42-07:00",
+  "outputs": {
+    "lds_file_path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/response-data/generated-sheet.lds"
+  },
+  "error": null,
+  "observations": [
+    "The requested output file was written."
+  ]
+},
+
+"print-lds-file-request": {
+  "schema": "stickerdb.execution_satellite.request.v1",
+  "job_id": "job-a18bd442",
+  "job": "print_lds_file",
+  "created_at": "2026-06-19T09:10:00-07:00",
+  "expires_at": "2026-06-20T09:10:00-07:00",
+  "input": {
+    "lds_file_path": "F:/sticker-db/.stickerdb/jobs/a18bd442/request-args/sheet.lds"
+  },
+  "response_path": "F:/sticker-db/.stickerdb/jobs/a18bd442/jobctrl/response.json"
+},
+
+"print-lds-file-success-response": {
+  "schema": "stickerdb.execution_satellite.response.v1",
+  "job_id": "job-a18bd442",
+  "job": "print_lds_file",
+  "ok": true,
+  "status": "done",
+  "message": "InputLog completed the LDS print script normally.",
+  "started_at": "2026-06-19T09:12:00-07:00",
+  "finished_at": "2026-06-19T09:13:15-07:00",
+  "outputs": {},
+  "error": null,
+  "observations": [
+    "InputLog completed normally.",
+    "The satellite does not independently verify physical print quality."
+  ]
+},
+
+"interrupted-response": {
+  "schema": "stickerdb.execution_satellite.response.v1",
+  "job_id": "job-a18bd442",
+  "job": "print_lds_file",
+  "ok": false,
+  "status": "interrupted",
+  "message": "InputLog playback was interrupted. The queue was stopped.",
+  "started_at": "2026-06-19T09:12:00-07:00",
+  "finished_at": "2026-06-19T09:12:08-07:00",
+  "outputs": {},
+  "error": {
+    "kind": "inputlog_interrupted",
+    "message": "InputLog reported interruption during playback."
+  },
+  "observations": [
+    "No further jobs were run after the interruption.",
+    "Operator decision was required."
+  ]
+}
+
+}
+}

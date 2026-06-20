@@ -1,0 +1,278 @@
+{
+"document": {
+"document-id": "stickerdb.execution-satellite.job-cell.v1",
+"title": "StickerDB Execution Satellite Job Cell",
+"tags": [
+"stickerdb",
+"execution-satellite",
+"job-cell",
+"filesystem",
+"request",
+"response",
+"file-ownership"
+],
+"purpose": "Describe the requester-owned job cell used by StickerDB when preparing execution satellite jobs.",
+"author": [
+"Lion Kimbro",
+"Wing-Cat"
+],
+"status": "draft",
+"created": "2026-06-19"
+},
+
+"summary": {
+"one-sentence": "A job cell is a requester-owned folder containing the request, input argument files, response data files, and response control file for one execution satellite job.",
+"plain-language": "StickerDB creates a little folder-world for each satellite job. The satellite may read from it and write to requested paths inside it, but StickerDB owns the folder and cleans it up later."
+},
+
+"example-path": {
+"job-cell-root": "F:/sticker-db/.stickerdb/jobs/ed3fa723/",
+"request-file": "F:/sticker-db/.stickerdb/jobs/ed3fa723/jobctrl/request.json",
+"response-file": "F:/sticker-db/.stickerdb/jobs/ed3fa723/jobctrl/response.json"
+},
+
+"folder-layout": {
+"root": {
+"path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/",
+"description": "The requester-owned folder for one job."
+},
+
+"jobctrl": {
+  "path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/jobctrl/",
+  "description": "Control files for the job.",
+  "typical-files": {
+    "request.json": "The request written by StickerDB and read by the satellite.",
+    "response.json": "The response written by the satellite to the request's response_path."
+  }
+},
+
+"request-args": {
+  "path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/request-args/",
+  "description": "Requester-created files that serve as arguments to the job.",
+  "examples": [
+    "sticker.png",
+    "sheet.lds",
+    "sticker-metadata.json"
+  ]
+},
+
+"response-data": {
+  "path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/response-data/",
+  "description": "Files the satellite is asked to produce for the requester.",
+  "examples": [
+    "generated-sheet.lds",
+    "preview.png"
+  ]
+}
+
+},
+
+"canonical-tree": [
+"F:/sticker-db/.stickerdb/jobs/ed3fa723/",
+"  jobctrl/",
+"    request.json",
+"    response.json",
+"  request-args/",
+"    sticker.png",
+"  response-data/",
+"    generated-sheet.lds"
+],
+
+"ownership": {
+"requester-owns": [
+"The job cell root folder.",
+"jobctrl/request.json.",
+"jobctrl/response.json after it is written.",
+"All files under request-args.",
+"All files under response-data.",
+"Cleanup of the entire job cell."
+],
+
+"satellite-may-do": [
+  "Read jobctrl/request.json.",
+  "Read files named in the request input section.",
+  "Write files named in the request output section.",
+  "Write jobctrl/response.json when response_path points there.",
+  "Keep separate satellite-owned local records, copies, logs, or cache."
+],
+
+"satellite-must-not-do": [
+  "Delete requester-owned job cells.",
+  "Delete files under request-args.",
+  "Delete files under response-data.",
+  "Rename or move requester-owned files unless the request explicitly asks for that behavior.",
+  "Assume requester-owned files are available after expires_at."
+]
+
+},
+
+"requester-lifecycle": {
+"steps": [
+{
+"step": 1,
+"name": "create-job-id",
+"description": "StickerDB creates a job identifier such as job-ed3fa723."
+},
+{
+"step": 2,
+"name": "create-job-cell",
+"description": "StickerDB creates the job cell folder and standard subfolders."
+},
+{
+"step": 3,
+"name": "write-request-args",
+"description": "StickerDB writes input files into request-args or otherwise prepares full input paths."
+},
+{
+"step": 4,
+"name": "write-request-json",
+"description": "StickerDB writes jobctrl/request.json with schema, job_id, job, created_at, expires_at, input, output, and response_path."
+},
+{
+"step": 5,
+"name": "submit-to-satellite",
+"description": "StickerDB makes the request visible to the satellite, typically by copying the request or writing a pointer into the satellite inbox."
+},
+{
+"step": 6,
+"name": "wait-for-response",
+"description": "StickerDB watches or later checks response_path."
+},
+{
+"step": 7,
+"name": "consume-response",
+"description": "StickerDB reads response.json and imports any produced response-data files if appropriate."
+},
+{
+"step": 8,
+"name": "cleanup",
+"description": "StickerDB eventually deletes or archives the job cell according to its own policy."
+}
+]
+},
+
+"satellite-lifecycle": {
+"steps": [
+{
+"step": 1,
+"name": "receive-request",
+"description": "The satellite receives a copy of the request or a pointer to the request."
+},
+{
+"step": 2,
+"name": "check-expiration",
+"description": "If the current time is after expires_at, the satellite may drop or ignore the job from its own side."
+},
+{
+"step": 3,
+"name": "show-pending-job",
+"description": "The satellite displays the job to the operator as pending work."
+},
+{
+"step": 4,
+"name": "execute-when-operator-starts",
+"description": "When the operator starts execution from the prepared environment, the satellite performs the job."
+},
+{
+"step": 5,
+"name": "write-response",
+"description": "The satellite writes response JSON to response_path."
+},
+{
+"step": 6,
+"name": "clean-own-records",
+"description": "The satellite may clean its own inbox entries, copies, logs, and cache according to its own rules."
+}
+]
+},
+
+"submission-model": {
+"description": "The job cell is owned by StickerDB. The satellite may still receive a local inbox record so it knows the request exists.",
+"acceptable-v1-approaches": [
+{
+"name": "copy-request-json",
+"description": "StickerDB copies jobctrl/request.json into the satellite inbox. The copied request still contains full paths back to the requester-owned job cell."
+},
+{
+"name": "pointer-file",
+"description": "StickerDB writes a small file into the satellite inbox containing the full path to jobctrl/request.json."
+}
+],
+"recommended-v1": "copy-request-json",
+"reason": "A copied request is simple, self-contained, and still uses full paths to requester-owned files."
+},
+
+"expiration": {
+"field": "expires_at",
+"example": "2026-06-20T08:50:00-07:00",
+"meaning-for-satellite": "After this time, the satellite may delete or ignore its own local record of the job without asking StickerDB.",
+"meaning-for-requester": "StickerDB may decide whether to re-up, recreate, archive, or delete the requester-owned job cell.",
+"important-distinction": "Expiration allows the satellite to clean its own side. It does not give the satellite ownership of the requester job cell."
+},
+
+"example-layout-sticker-job-cell": {
+"tree": [
+"F:/sticker-db/.stickerdb/jobs/ed3fa723/",
+"  jobctrl/",
+"    request.json",
+"    response.json",
+"  request-args/",
+"    sticker.png",
+"  response-data/",
+"    generated-sheet.lds"
+],
+
+
+"request-json": {
+  "schema": "stickerdb.execution_satellite.request.v1",
+  "job_id": "job-ed3fa723",
+  "job": "layout_sticker_to_lds",
+  "created_at": "2026-06-19T08:50:00-07:00",
+  "expires_at": "2026-06-20T08:50:00-07:00",
+  "input": {
+    "sticker_image_path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/request-args/sticker.png"
+  },
+  "output": {
+    "lds_file_path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/response-data/generated-sheet.lds"
+  },
+  "response_path": "F:/sticker-db/.stickerdb/jobs/ed3fa723/jobctrl/response.json"
+}
+
+},
+
+"example-print-lds-job-cell": {
+"tree": [
+"F:/sticker-db/.stickerdb/jobs/a18bd442/",
+"  jobctrl/",
+"    request.json",
+"    response.json",
+"  request-args/",
+"    sheet.lds",
+"  response-data/"
+],
+
+
+"request-json": {
+  "schema": "stickerdb.execution_satellite.request.v1",
+  "job_id": "job-a18bd442",
+  "job": "print_lds_file",
+  "created_at": "2026-06-19T09:10:00-07:00",
+  "expires_at": "2026-06-20T09:10:00-07:00",
+  "input": {
+    "lds_file_path": "F:/sticker-db/.stickerdb/jobs/a18bd442/request-args/sheet.lds"
+  },
+  "response_path": "F:/sticker-db/.stickerdb/jobs/a18bd442/jobctrl/response.json"
+}
+
+
+},
+
+"design-notes": [
+"The job cell is meant to be legible when inspected manually.",
+"request-args means files supplied as arguments to the request.",
+"response-data means files produced as data for the requester.",
+"jobctrl means control-plane files such as request and response JSON.",
+"The satellite should not need to infer where response files belong; the request tells it response_path.",
+"The requester may use the job cell as a temporary communication cell and delete it later."
+]
+}

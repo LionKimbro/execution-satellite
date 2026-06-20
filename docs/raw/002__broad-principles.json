@@ -1,0 +1,184 @@
+{
+"document": {
+"document-id": "stickerdb.execution-satellite.principles.v1",
+"title": "StickerDB Execution Satellite Principles",
+"tags": [
+"stickerdb",
+"execution-satellite",
+"automation",
+"filetalk",
+"inputlog",
+"leonardo-design-studio",
+"principles"
+],
+"purpose": "Define the broad architectural principles for the StickerDB Execution Satellite system.",
+"author": [
+"Lion Kimbro",
+"Wing-Cat"
+],
+"status": "draft",
+"created": "2026-06-19"
+},
+
+"summary": {
+"one-sentence": "An execution satellite is a human-gated batch executor that performs fragile GUI-bound production tasks requested by StickerDB.",
+"plain-language": "StickerDB decides that a production operation needs to happen. The execution satellite performs that operation later, when the user has prepared the correct desktop and explicitly started execution. The satellite writes a response back to the path supplied by the requester."
+},
+
+"core-idea": {
+"statement": "Separate production intent from fragile GUI execution.",
+"explanation": "StickerDB should not directly take over the mouse and keyboard, because Leonardo Design Studio operations depend on screen layout, application state, and human readiness. Instead, StickerDB creates request files. The execution satellite reads those requests, runs the appropriate operation when the human is ready, and writes response files."
+},
+
+"roles": {
+"requester": {
+"description": "The program that creates jobs for the execution satellite.",
+"initial-requester": "StickerDB",
+"responsibilities": [
+"Create a requester-owned job cell.",
+"Create request files.",
+"Create or provide input files.",
+"Provide full paths to input files.",
+"Provide full paths for expected output files.",
+"Provide the full response_path.",
+"Set expires_at.",
+"Read response files.",
+"Own cleanup of the requester job cell."
+]
+},
+
+"execution-satellite": {
+  "description": "A human-gated executor for jobs that cannot safely or cleanly run inside the requester program.",
+  "initial-satellite": "Leonardo Design Studio / InputLog execution satellite",
+  "responsibilities": [
+    "Receive or discover request files.",
+    "Keep its own local inbox, cache, logs, and records as needed.",
+    "Read requester-owned input paths.",
+    "Perform known job types.",
+    "Write requester-specified output paths.",
+    "Write the requester-specified response_path.",
+    "Stop immediately on execution interruption.",
+    "Allow the operator to retry, fail the current job, or fail the entire queue.",
+    "Drop expired jobs from its own side without further communication."
+  ]
+},
+
+"human-operator": {
+  "description": "The person who prepares the execution environment and explicitly starts satellite execution.",
+  "responsibilities": [
+    "Open or switch to the prepared execution desktop.",
+    "Ensure Leonardo Design Studio and related windows are arranged correctly.",
+    "Start or focus the execution satellite.",
+    "Review pending work.",
+    "Begin execution.",
+    "Resolve interruptions using the satellite UI."
+  ]
+}
+
+},
+
+"architectural-boundaries": {
+"requester-owns-job-cell": {
+"rule": "The requester owns the entire job cell, including request-args, response-data, jobctrl, response files, and eventual cleanup.",
+"reason": "The requester understands the business meaning of the files and decides how long they matter."
+},
+
+"satellite-owns-its-own-records": {
+  "rule": "The satellite may keep its own inbox entries, local copies, logs, working files, and execution records.",
+  "reason": "The satellite needs enough local information to execute and debug its own work.",
+  "cleanup": "The satellite is responsible for cleaning its own records according to its own policy, especially after expires_at."
+},
+
+"request-owns-callback": {
+  "rule": "Every request includes a full response_path.",
+  "reason": "The satellite should not need to know StickerDB's internal response location rules."
+},
+
+"paths-are-absolute": {
+  "rule": "Input and output file paths in requests should be full paths.",
+  "reason": "The satellite may run from a different working directory and should not infer requester path context."
+},
+
+"satellite-does-not-clean-requester-files": {
+  "rule": "The satellite does not delete requester-owned input files, output files, response files, or job cells.",
+  "reason": "Cleanup belongs to the requester because the requester owns the job cell and understands the business lifecycle."
+}
+
+},
+
+"human-readiness": {
+"principle": "Human readiness is implicit in the idea of an execution satellite.",
+"explanation": "If the work could safely run immediately inside StickerDB, it would not need to be sent to an execution satellite. Therefore, v1 requests do not need a requires_human_ready field.",
+"consequence": "The satellite should not execute merely because a request exists. It executes when the operator starts a run from the prepared environment."
+},
+
+"v1-scope": {
+"not-generic": {
+"rule": "The first execution satellite is not a universal command executor.",
+"reason": "The first real problem is Leonardo Design Studio / InputLog execution, not generic process scheduling."
+},
+
+
+"no-capability-registry": {
+  "rule": "V1 does not require capability discovery or a satellite registry.",
+  "reason": "StickerDB and the first execution satellite are being developed together for known job types."
+},
+
+"known-initial-jobs": [
+  "layout_sticker_to_lds",
+  "print_lds_file"
+]
+
+},
+
+"failure-principles": {
+"inputlog-is-blind": {
+"statement": "InputLog is powerful but blind.",
+"explanation": "InputLog can play mouse and keyboard actions, but it generally does not know whether the GUI is semantically correct. It can usually know whether playback was interrupted, but not whether Leonardo Design Studio did the intended business operation."
+},
+
+"fail-stop": {
+  "rule": "On any InputLog interruption or abnormal result, the satellite stops the entire queue run.",
+  "reason": "If the user moves the mouse or types during playback, continued execution can cause many jobs to fail rapidly. The satellite must prevent cascade failure."
+},
+
+"operator-decision": {
+  "rule": "After interruption, the satellite asks the operator what to do.",
+  "allowed-choices": [
+    "retry this job",
+    "fail this job",
+    "fail entire queue"
+  ],
+  "excluded-choice": "manually completed",
+  "reason-excluded": "Manual completion creates a heavy knowledge burden because the user would need to know exactly which output files and response states are expected."
+}
+
+
+},
+
+"expiration-principles": {
+"rule": "Every request includes expires_at.",
+"meaning": "After expires_at, the satellite is free to drop or ignore the job from its own side without contacting the requester.",
+"reason": "The requester and operator may create jobs and then get distracted for days. The satellite needs a local way to recognize stale work.",
+"requester-responsibility": "If an expired job still matters, StickerDB may offer to re-up or recreate the request.",
+"satellite-responsibility": "The satellite may clean its own inbox records, local request copies, cache, and logs for expired jobs. It does not clean requester-owned job cells."
+},
+
+"response-honesty": {
+"principle": "Responses should distinguish automation completion from business certainty.",
+"explanation": "The satellite may know that InputLog completed normally, and it may know that an output file exists. It may not know that the physical print is correct or that the visual layout is aesthetically acceptable.",
+"consequence": "Responses should report what the satellite actually knows."
+},
+
+"growth-principle": {
+"statement": "Keep v1 small, but allow architectural growth.",
+"preferred-growth-path": "Add new job handlers over time rather than building a generic workflow engine early.",
+"examples": [
+"layout_sticker_to_lds",
+"print_lds_file",
+"prepare_cut_job",
+"export_preview",
+"batch_layout"
+]
+}
+}
