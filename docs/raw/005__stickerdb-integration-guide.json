@@ -1,0 +1,310 @@
+{
+  "document": {
+    "document-id": "stickerdb.execution-satellite.integration-guide.v1",
+    "title": "StickerDB Integration Guide for Execution Satellite",
+    "tags": [
+      "stickerdb",
+      "execution-satellite",
+      "integration",
+      "filetalk",
+      "job-cell",
+      "inputlog"
+    ],
+    "purpose": "Tell the StickerDB implementation agent exactly how to submit jobs to the current Execution Satellite application and consume its responses.",
+    "author": [
+      "Lion Kimbro",
+      "Codex"
+    ],
+    "status": "implementation-current",
+    "created": "2026-06-20"
+  },
+  "implementation-status": {
+    "satellite-version": "0.1.0",
+    "state": "implemented and locally installed",
+    "hosting": "lionscliapp",
+    "operator-interface": "Tkinter queue window",
+    "execution-model": "Human-gated. The existence of a request does not cause immediate execution. The operator prepares Leonardo Design Studio and explicitly starts the pending queue.",
+    "inputlog": {
+      "working-directory": "C:/lion/installed/inputlog",
+      "recordings": {
+        "layout_sticker_to_lds": "layout",
+        "print_lds_file": "print-sticker"
+      }
+    }
+  },
+  "coordinates": {
+    "execution-satellite-repository": "C:/lion/github/execution-satellite",
+    "execution-satellite-project-directory-current-location": "C:/lion/github/execution-satellite/.execution-satellite",
+    "submission-inbox-relative-to-project-directory": "inbox/",
+    "integration-guide": {
+      "document-id": "stickerdb.execution-satellite.integration-guide.v1",
+      "path": "C:/lion/github/execution-satellite/docs/raw/005__stickerdb-integration-guide.json"
+    }
+  },
+  "recommended-reading-for-stickerdb-coding-agent": [
+    {
+      "order": 1,
+      "document-id": "stickerdb.execution-satellite.integration-guide.v1",
+      "path": "C:/lion/github/execution-satellite/docs/raw/005__stickerdb-integration-guide.json",
+      "reason": "Current implementation-facing instructions for integrating StickerDB with the running satellite."
+    },
+    {
+      "order": 2,
+      "document-id": "stickerdb.execution-satellite.job-cell.v1",
+      "path": "C:/lion/github/execution-satellite/docs/raw/004__job-cell-outline.json",
+      "reason": "Requester-owned external job-cell structure, ownership, and lifecycle."
+    },
+    {
+      "order": 3,
+      "document-id": "stickerdb.execution-satellite.protocol.softspec.v1",
+      "path": "C:/lion/github/execution-satellite/docs/raw/003__communication-protocol.json",
+      "reason": "Request and response JSON meanings and structures."
+    },
+    {
+      "order": 4,
+      "document-id": "stickerdb.execution-satellite.principles.v1",
+      "path": "C:/lion/github/execution-satellite/docs/raw/002__broad-principles.json",
+      "reason": "Architectural purpose, human-gating, ownership, failure, expiration, and response-honesty principles."
+    }
+  ],
+  "stickerdb-configuration": {
+    "principle": "StickerDB should be configured with one deployment anchor: the lionscliapp project directory belonging to Execution Satellite.",
+    "recommended-key": "execpath.execution-satellite-project-dir",
+    "current-default-or-setup-value": "C:/lion/github/execution-satellite/.execution-satellite",
+    "example-command": "sticker-db set execpath.execution-satellite-project-dir C:/lion/github/execution-satellite/.execution-satellite",
+    "derived-paths": {
+      "submission-inbox": "<execpath.execution-satellite-project-dir>/inbox",
+      "execution-satellite-working-directory-if-needed": "parent of <execpath.execution-satellite-project-dir>"
+    },
+    "rules": [
+      "StickerDB should not hard-code the execution-satellite repository location.",
+      "StickerDB should not separately configure the inbox when it is the conventional inbox child of the configured project directory.",
+      "The configured value should be an absolute path after lionscliapp resolves execpath.*.",
+      "StickerDB should validate that the configured project directory exists and that its inbox child is available or can be created according to the agreed deployment policy.",
+      "StickerDB normally communicates by writing files and does not need to launch the satellite process.",
+      "If a future feature launches or focuses Execution Satellite, the working directory is the parent of the configured .execution-satellite directory."
+    ],
+    "naming-note": "The actual lionscliapp project-directory name is .execution-satellite, with a hyphen."
+  },
+  "important-boundary": {
+    "statement": "StickerDB owns its job cells. Execution Satellite owns only its inbox copies and local run records.",
+    "stickerdb-owns": [
+      "The job_id.",
+      "The requester-side job cell.",
+      "jobctrl/request.json.",
+      "jobctrl/response.json after the satellite writes it.",
+      "All request-args files.",
+      "All response-data files.",
+      "Polling or later checking response_path.",
+      "Archiving or deleting the requester-side job cell."
+    ],
+    "satellite-may": [
+      "Read full absolute input paths named by the request.",
+      "Write full absolute output paths named by the request.",
+      "Write response JSON to response_path.",
+      "Keep and clean its own inbox copy, InputLog reports, logs, and terminal records."
+    ],
+    "satellite-must-not-be-expected-to": [
+      "Delete StickerDB job cells or requester-owned files.",
+      "Infer requester-relative paths.",
+      "Execute immediately when a request appears.",
+      "Prove visual quality or physical print correctness.",
+      "Return a response for a malformed request that cannot be normalized.",
+      "Return a response merely because an already-expired request was discovered."
+    ]
+  },
+  "submission-procedure": {
+    "summary": "Create the complete requester-owned job cell first, then atomically place a copy of request.json into the satellite inbox.",
+    "steps": [
+      {
+        "step": 1,
+        "name": "allocate-unique-job-id",
+        "instruction": "Create a new stable job_id for this submission. Do not reuse a job_id from an earlier submission, including retries or re-ups."
+      },
+      {
+        "step": 2,
+        "name": "create-job-cell",
+        "instruction": "Create jobctrl, request-args, and response-data under a StickerDB-owned job cell."
+      },
+      {
+        "step": 3,
+        "name": "prepare-inputs-and-destinations",
+        "instruction": "Write or copy all requester-owned input files. Decide the absolute output paths and absolute response_path."
+      },
+      {
+        "step": 4,
+        "name": "write-requester-request",
+        "instruction": "Write the complete request to the job cell's jobctrl/request.json."
+      },
+      {
+        "step": 5,
+        "name": "submit-atomically",
+        "instruction": "Copy the complete request JSON into the satellite inbox using a temporary filename that does not end in .json, then atomically rename it to a unique final filename ending in .json."
+      },
+      {
+        "step": 6,
+        "name": "wait-asynchronously",
+        "instruction": "Return control to StickerDB. Poll or later check response_path; do not block the StickerDB UI while waiting for human-gated execution."
+      },
+      {
+        "step": 7,
+        "name": "consume-response",
+        "instruction": "When response_path exists and parses as JSON, verify schema, job_id, and job before applying the result."
+      },
+      {
+        "step": 8,
+        "name": "own-cleanup",
+        "instruction": "StickerDB decides when to archive, re-up, or delete the requester-side job cell."
+      }
+    ],
+    "atomic-submission-reason": "The satellite scans every *.json file in the inbox derived from the configured Execution Satellite project directory. A temporary extension prevents it from reading a partially copied request.",
+    "recommended-inbox-filename": "<job_id>.json",
+    "filename-note": "The satellite does not derive identity from the inbox filename; job_id inside the request is authoritative. A unique job-based filename is recommended for legibility and collision avoidance."
+  },
+  "request-contract": {
+    "schema": "stickerdb.execution_satellite.request.v1",
+    "universal-required-fields": [
+      "schema",
+      "job_id",
+      "job",
+      "created_at",
+      "expires_at",
+      "input",
+      "response_path"
+    ],
+    "rules": [
+      "The request must be a JSON object.",
+      "schema must be exactly stickerdb.execution_satellite.request.v1.",
+      "job_id must be a non-empty string and unique for this submission.",
+      "created_at and expires_at must be ISO-8601 timestamps with timezones.",
+      "expires_at must be later than created_at.",
+      "Every input path, output path, and response_path must be absolute.",
+      "The request should be treated as immutable after submission.",
+      "Additional keys are tolerated."
+    ],
+    "jobs": {
+      "layout_sticker_to_lds": {
+        "required-input": {
+          "sticker_image_path": "Absolute path to the requester-owned sticker image."
+        },
+        "required-output": {
+          "lds_file_path": "Absolute path where the satellite is expected to leave the generated LDS file."
+        },
+        "success-observation": "The InputLog recording completed normally and lds_file_path exists."
+      },
+      "print_lds_file": {
+        "required-input": {
+          "lds_file_path": "Absolute path to the requester-owned LDS file to print."
+        },
+        "output": "May be omitted or empty.",
+        "success-observation": "The InputLog recording completed normally. This does not independently prove physical print quality."
+      }
+    }
+  },
+  "request-examples": {
+    "layout_sticker_to_lds": {
+      "schema": "stickerdb.execution_satellite.request.v1",
+      "job_id": "job-2026-06-20-a1b2c3d4",
+      "job": "layout_sticker_to_lds",
+      "created_at": "2026-06-20T14:00:00-07:00",
+      "expires_at": "2026-06-21T14:00:00-07:00",
+      "input": {
+        "sticker_image_path": "D:/projects/stickers/.stickerdb/jobs/job-2026-06-20-a1b2c3d4/request-args/sticker.png"
+      },
+      "output": {
+        "lds_file_path": "D:/projects/stickers/.stickerdb/jobs/job-2026-06-20-a1b2c3d4/response-data/generated.lds"
+      },
+      "response_path": "D:/projects/stickers/.stickerdb/jobs/job-2026-06-20-a1b2c3d4/jobctrl/response.json"
+    },
+    "print_lds_file": {
+      "schema": "stickerdb.execution_satellite.request.v1",
+      "job_id": "job-2026-06-20-e5f6a7b8",
+      "job": "print_lds_file",
+      "created_at": "2026-06-20T14:10:00-07:00",
+      "expires_at": "2026-06-21T14:10:00-07:00",
+      "input": {
+        "lds_file_path": "D:/projects/stickers/.stickerdb/jobs/job-2026-06-20-e5f6a7b8/request-args/sheet.lds"
+      },
+      "response_path": "D:/projects/stickers/.stickerdb/jobs/job-2026-06-20-e5f6a7b8/jobctrl/response.json"
+    }
+  },
+  "response-contract": {
+    "schema": "stickerdb.execution_satellite.response.v1",
+    "required-consumer-checks": [
+      "The file parses as a JSON object.",
+      "schema is stickerdb.execution_satellite.response.v1.",
+      "job_id matches the submitted job.",
+      "job matches the submitted operation.",
+      "ok and status are interpreted together.",
+      "Unknown additional keys are ignored."
+    ],
+    "statuses-produced-by-current-implementation": {
+      "done": {
+        "ok": true,
+        "meaning": "InputLog reached a normal completion report and any requested output file was observed to exist."
+      },
+      "failed": {
+        "ok": false,
+        "meaning": "The job failed, the operator chose to fail it, the InputLog report was invalid or abnormal, a requested output was missing, or an earlier job caused the operator to fail the entire queue."
+      },
+      "interrupted": {
+        "ok": false,
+        "meaning": "InputLog reported physical user interruption and the operator chose not to retry the job."
+      }
+    },
+    "fields": [
+      "schema",
+      "job_id",
+      "job",
+      "ok",
+      "status",
+      "message",
+      "started_at",
+      "finished_at",
+      "outputs",
+      "error",
+      "observations"
+    ],
+    "honesty-rule": "Treat observations as facts the satellite could directly observe. A done print response means InputLog completed normally, not that the physical print was inspected and approved."
+  },
+  "queue-and-failure-behavior": {
+    "normal": "The satellite writes the response and proceeds to the next pending job.",
+    "abnormal": "The satellite stops the queue and asks the operator to retry the current job, fail the current job and continue, or fail the entire queue.",
+    "retry-current-job": "The same submitted request is attempted again locally. StickerDB does not submit another file for this operator retry.",
+    "fail-current-job": "The satellite writes a failed or interrupted response for the current job and continues.",
+    "fail-entire-queue": "The satellite writes the current failure response and writes failed responses for the remaining jobs in that launched queue.",
+    "important-idempotency-note": "Once the satellite has a terminal local record for a job_id, an inbox request with that job_id is no longer pending. To re-up or resubmit work from StickerDB, create a new job_id and a new request."
+  },
+  "expiration-and-timeouts": {
+    "satellite-behavior": "A request already past expires_at is displayed as expired and is not run.",
+    "response-behavior": "The current implementation does not write an expired response merely upon discovering an already-expired inbox request.",
+    "stickerdb-guidance": [
+      "Treat absence of response before expires_at as pending human-gated work.",
+      "After expires_at, StickerDB may mark the request stale and offer to re-up it.",
+      "A re-up must create a new job_id, new timestamps, and a new inbox submission.",
+      "Do not use a short synchronous timeout to classify the satellite as failed; execution depends on human readiness."
+    ]
+  },
+  "stickerdb-implementation-checklist": [
+    "Create a small satellite integration module isolated from StickerDB UI and database logic.",
+    "Declare execpath.execution-satellite-project-dir in StickerDB and let the user persist it with sticker-db set.",
+    "Derive the submission inbox as the inbox child of the configured Execution Satellite project directory.",
+    "Create requester-owned job cells and absolute paths.",
+    "Write requester request.json before submitting its copy.",
+    "Submit through temporary-file plus atomic rename.",
+    "Use a unique job_id for every submission and re-up.",
+    "Persist enough StickerDB state to reconnect a business operation to job_id and response_path after restart.",
+    "Poll response_path through the Tkinter event loop or another non-blocking periodic mechanism.",
+    "Validate response schema, job_id, and job at the castle gate.",
+    "Represent pending, done, failed, interrupted, stale, and malformed-response states honestly in the UI.",
+    "Leave requester-side cleanup under StickerDB control."
+  ],
+  "non-contractual-internals": [
+    "Everything in the configured Execution Satellite project directory other than the inbox submission boundary is private to the satellite unless a later specification explicitly says otherwise.",
+    "StickerDB should not read, enumerate, or depend on the satellite-owned runs directory.",
+    "StickerDB should not invoke InputLog directly.",
+    "StickerDB should not depend on the satellite's hashed local run-directory names.",
+    "StickerDB should not infer completion from disappearance or persistence of the inbox copy.",
+    "The response_path callback is the requester-visible completion channel."
+  ]
+}

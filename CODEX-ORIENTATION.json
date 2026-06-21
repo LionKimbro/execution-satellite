@@ -1,0 +1,127 @@
+{
+  "document": {
+    "document-id": "execution-satellite.codex-orientation.v1",
+    "title": "Codex Orientation for execution-satellite",
+    "tags": [
+      "codex",
+      "orientation",
+      "project-local",
+      "llm"
+    ],
+    "purpose": "Keep durable pointers and compact working notes for Codex while collaborating with Lion on execution-satellite."
+  },
+  "project-documentation": {
+    "location": "C:\\lion\\github\\execution-satellite\\docs\\raw",
+    "status": "all-files-read-as-of-2026-06-20",
+    "files-read": [
+      "001__coordinates.json",
+      "002__broad-principles.json",
+      "003__communication-protocol.json",
+      "004__job-cell-outline.json"
+    ],
+    "coordinates": {
+      "spark-id": "a36ec5ea-a320-413f-8479-036423110bf5",
+      "initial-conversation-with-wingcat": "https://chatgpt.com/c/6a3565bf-92fc-83e8-9b65-e6e43bda3436"
+    }
+  },
+  "source-pointers": {
+    "lions-dictionary-for-llms": {
+      "path": "C:\\lion\\github\\lions-documents\\raw\\0003__lions-dictionary-for-llms.json",
+      "status": "read",
+      "use": "Conceptual orientation and Lion's recurring vocabulary; treat entries as compact anchors rather than exhaustive specifications."
+    },
+    "coding-conventions": {
+      "path": "C:\\lion\\github\\lions-documents\\coding-guidelines\\v2026-01-14_part2_lions-philosophy-of-programming_simplified.json",
+      "status": "read",
+      "use": "Apply when designing, implementing, or reviewing code for Lion."
+    },
+    "stickerdb-overview": {
+      "path": "C:\\lion\\code\\stickerdb\\docs\\raw\\001__overview.json",
+      "status": "read",
+      "use": "Orient Execution Satellite to the neighboring StickerDB application and its expected future communication with this project."
+    },
+    "inputlog-play-command-and-report": {
+      "path": "C:\\lion\\github\\inputlog\\docs\\raw\\003_play-command-and-report-soft-spec.json",
+      "document-id": "inputlog.play-command-and-report.softspec.v1",
+      "status": "read",
+      "use": "Authoritative integration reference for invoking InputLog playback and interpreting its atomic JSON lifecycle/completion report."
+    },
+    "lionscliapp-reference": {
+      "path": "C:\\lion\\github\\lionscliapp\\doc\\reference.json",
+      "document-id": "lionscliapp.reference.v1",
+      "status": "read",
+      "use": "Required framework for hosting, configuring, and running the Execution Satellite application."
+    },
+    "document-writing-conventions": {
+      "path": "C:\\lion\\github\\lions-documents\\raw\\0002__lions-docs-description_json-document-for-llms_simplified_v1.json",
+      "status": "read-when-document-writing-began-2026-06-20",
+      "read-when": "Before writing or substantially editing a document."
+    },
+    "soft-spec-writing-conventions": {
+      "path": "C:\\lion\\github\\soft-schema\\docs\\raw\\02__second-pass.txt",
+      "status": "unread-by-request",
+      "read-when": "Before writing or substantially editing a SoftSpec."
+    }
+  },
+  "working-orientation": {
+    "coding-style": [
+      "Clarity beats cleverness; code should read like a story and expose its structure from a distance.",
+      "Prefer procedural functions, lightweight conventions, direct JSON-friendly structures, and minimal scaffolding.",
+      "Normalize and validate external input at castle gates; trust canonical structures inside.",
+      "Keep validation separate from operation.",
+      "Prefer few function arguments; contextual state may live in a small canonical g dictionary.",
+      "Avoid classes and threads by default unless they carry concrete weight.",
+      "Prefer UTF-8 JSON, JSONL for append-only event logs, atomic writes, and filesystem-native coordination where appropriate.",
+      "Preserve momentum, legibility, inspectability, and trust over theoretical purity."
+    ],
+    "dictionary-guidance": [
+      "Use Lion's dictionary as semantic grounding, not as a complete specification.",
+      "Respect Lion's established vocabulary and distinctions rather than silently replacing them with conventional near-synonyms.",
+      "When an entry points to a full specification, seek that specification before making details load-bearing."
+    ],
+    "stickerdb-relationship": [
+      "Execution Satellite orbits StickerDB: treat StickerDB as a neighboring application and likely future source or destination of communication.",
+      "StickerDB is a Lion Conventional Tkinter database editor whose data model uses M1 transport units.",
+      "StickerDB expects filesystem-native FileTalk communication through isolated inbox and outbox boundaries.",
+      "Do not infer a detailed message protocol from the overview; inspect the relevant specification or live artifacts when communication work begins."
+    ],
+    "execution-satellite-core": [
+      "The satellite separates StickerDB's production intent from fragile GUI execution in Leonardo Design Studio through InputLog.",
+      "Execution is human-gated: receiving a request does not authorize immediate execution; the operator prepares the desktop and starts the run.",
+      "StickerDB owns each requester-side job cell and its cleanup. The satellite may read named inputs, write named outputs and response_path, but must not clean requester-owned files.",
+      "Requests and responses use absolute paths and stable job_id values. Requests include expires_at and response_path.",
+      "The initial job vocabulary is layout_sticker_to_lds and print_lds_file.",
+      "InputLog is blind. Any interruption or abnormal result stops the entire queue for operator choice: retry current job, fail current job, or fail the entire queue.",
+      "Responses report only what the satellite actually knows, distinguishing automation completion and observed files from business or physical-print certainty.",
+      "The recommended v1 submission model copies request JSON into the satellite inbox while retaining full paths back to the requester-owned job cell."
+    ],
+    "inputlog-integration": [
+      "Invoke playback as: inputlog play --recording <name-of-recording> --report <path-to-report-json>.",
+      "Run InputLog with C:\\lion\\installed\\inputlog as its default working directory; this is the universal installed InputLog project root containing the production recordings.",
+      "Use a fresh report path and wait for the InputLog process to exit before reading it.",
+      "Playback starts only after InputLog successfully creates the initial atomic JSON report.",
+      "Require a readable report for the expected recording and a sufficiently recent ts; do not infer success from stdout or process exit alone.",
+      "completion-status normal means the recording reached its end.",
+      "completion-status user-aborted means physical user input stopped playback; abort-index is diagnostic context.",
+      "completion-status error means a caught failure; inspect stage plus error.type and error.message.",
+      "completion-status running after process exit is unsuccessful or indeterminate, never success.",
+      "Missing, malformed, stale, mismatched, or unknown-status reports are unsuccessful or indeterminate.",
+      "Consumers should require the seven documented keys, tolerate unknown additional keys, and ignore JSON formatting and key order.",
+      "Physical alphabetic key presses request labels rather than aborting; other relevant physical keyboard or mouse input aborts playback.",
+      "labels-added may indicate that InputLog rewrote the selected recording during the run."
+    ],
+    "lionscliapp-hosting": [
+      "The Execution Satellite app must use lionscliapp for application hosting, persistent configuration, CLI parsing, command dispatch, and lifecycle.",
+      "Declare the application, project directory, configuration keys, descriptions, and commands before calling app.main() as the final entrypoint operation.",
+      "Use app.ctx only during command execution; it is empty during declaration.",
+      "Prefer projpath.* for satellite-owned files under its hidden project directory and execpath.* for paths resolved from the invocation execution root.",
+      "Do not introduce new path.* declarations; that namespace is deprecated.",
+      "Remember that general CLI/config values remain strings and must be explicitly coerced when another type is needed.",
+      "Use lionscliapp's layered configuration: declared defaults, persisted config.json, options file, then CLI overrides.",
+      "Use built-in set, get, keys, and help behavior rather than recreating configuration commands.",
+      "Keep command handlers as no-argument functions reading the plain global app.ctx dictionary.",
+      "Use lionscliapp JSON/path helpers where they fit, while preserving any stronger atomic-write requirements imposed by the satellite protocol."
+    ]
+  },
+  "codex-notes": []
+}
