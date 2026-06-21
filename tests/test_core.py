@@ -46,9 +46,16 @@ def make_report(recording, status="normal", stage="complete", error=None):
 
 def make_config(tmp_path):
     inputlog_root = tmp_path / "inputlog"
-    inputlog_root.mkdir()
+    inputlog_root.mkdir(parents=True)
+    staging = tmp_path / "launch"
+    staging.mkdir()
+    save_folder = tmp_path / "save"
+    save_folder.mkdir()
     return {
         "execpath.inputlog-root": inputlog_root,
+        "execpath.staging-folder": staging,
+        "execpath.leonardo-save-folder": save_folder,
+        "leonardo.output-filename": "Untitled.LDS",
         "inputlog.command": "inputlog",
         "recording.layout": "layout",
         "recording.print": "print-sticker",
@@ -114,10 +121,10 @@ def test_execute_layout_requires_requested_output(tmp_path, monkeypatch):
     config = make_config(tmp_path)
     fake_inputlog(monkeypatch, make_report("layout"))
 
-    outcome = core.execute_inputlog(request, config, tmp_path / "run")
+    outcome = core.execute_job(request, config, tmp_path / "run")
 
     assert outcome["normal"] is False
-    assert outcome["kind"] == "missing-output"
+    assert outcome["kind"] == "job-adapter-error"
 
 
 def test_execute_layout_accepts_normal_report_and_existing_output(tmp_path, monkeypatch):
@@ -193,3 +200,80 @@ def test_complete_entry_writes_response_and_terminal_record(tmp_path):
     record = core.read_json(entry["record-path"])
     assert written_response["status"] == "failed"
     assert record["state"] == "failed"
+
+
+def test_preflight_refuses_nonblank_launch_folder(tmp_path):
+    entry = {
+        "job-id": "job-test",
+        "job": "print_lds_file",
+        "request": core.normalize_request(make_request(tmp_path / "request", "print_lds_file")),
+    }
+    config = make_config(tmp_path / "config")
+    (config["execpath.staging-folder"] / "unexpected.txt").write_text("no", encoding="utf-8")
+
+    problems = core.validate_queue_preflight([entry], config)
+
+    assert any("doesn't look safe" in problem for problem in problems)
+    assert (config["execpath.staging-folder"] / "unexpected.txt").exists()
+
+
+def test_execute_print_stages_input_and_clears_folder(tmp_path, monkeypatch):
+    request = core.normalize_request(make_request(tmp_path / "request", "print_lds_file"))
+    config = make_config(tmp_path / "config")
+    seen = {}
+
+    def run(command, cwd, capture_output, text, check):
+        staged = list(config["execpath.staging-folder"].iterdir())
+        seen["staged"] = [path.name for path in staged]
+        report_path = Path(command[command.index("--report") + 1])
+        report_path.write_text(json.dumps(make_report("print-sticker")), encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(core.subprocess, "run", run)
+    outcome = core.execute_job(request, config, tmp_path / "run")
+
+    assert outcome["normal"] is True
+    assert seen["staged"] == ["sheet.lds"]
+    assert list(config["execpath.staging-folder"].iterdir()) == []
+
+
+def test_execute_layout_collects_untitled_lds_and_clears_folder(tmp_path, monkeypatch):
+    request = core.normalize_request(make_request(tmp_path / "request"))
+    config = make_config(tmp_path / "config")
+
+    def run(command, cwd, capture_output, text, check):
+        generated = core.get_leonardo_output_path(config)
+        generated.write_bytes(b"generated lds")
+        report_path = Path(command[command.index("--report") + 1])
+        report_path.write_text(json.dumps(make_report("layout")), encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(core.subprocess, "run", run)
+    outcome = core.execute_job(request, config, tmp_path / "run")
+
+    assert outcome["normal"] is True
+    assert request["output"]["lds_file_path"].read_bytes() == b"generated lds"
+    assert not core.get_leonardo_output_path(config).exists()
+    assert list(config["execpath.staging-folder"].iterdir()) == []
+
+
+def test_interrupted_layout_removes_attempt_owned_untitled_lds(tmp_path, monkeypatch):
+    request = core.normalize_request(make_request(tmp_path / "request"))
+    config = make_config(tmp_path / "config")
+
+    def run(command, cwd, capture_output, text, check):
+        generated = core.get_leonardo_output_path(config)
+        generated.write_bytes(b"partial")
+        report_path = Path(command[command.index("--report") + 1])
+        report_path.write_text(
+            json.dumps(make_report("layout", "user-aborted")),
+            encoding="utf-8",
+        )
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(core.subprocess, "run", run)
+    outcome = core.execute_job(request, config, tmp_path / "run")
+
+    assert outcome["status"] == "interrupted"
+    assert not core.get_leonardo_output_path(config).exists()
+    assert list(config["execpath.staging-folder"].iterdir()) == []

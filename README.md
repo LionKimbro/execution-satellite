@@ -34,4 +34,11 @@ execution-satellite doctor
 execution-satellite keys
 execution-satellite get recording.layout
 execution-satellite set execpath.inputlog-root C:/lion/installed/inputlog
+execution-satellite set execpath.staging-folder C:/Users/Robert/Launch
+execution-satellite set execpath.leonardo-save-folder D:/tmp
 ```
+
+The launch folder is a dedicated transient stage. It must be completely empty
+when the operator starts a queue. If it is not empty, the satellite refuses to
+run and deletes nothing. Once the blank-folder check passes and the operator
+confirms Go, the satellite may clear and reuse that folder until the queue ends.

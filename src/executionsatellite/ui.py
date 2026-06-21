@@ -1,8 +1,10 @@
 import json
+import os
 import queue
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from pathlib import Path
+from tkinter import filedialog, messagebox, ttk
 
 from executionsatellite import core
 
@@ -15,6 +17,7 @@ g = {
     "decisions": queue.Queue(),
     "running": False,
     "config": None,
+    "path-vars": {},
 }
 
 
@@ -38,11 +41,29 @@ def create_widgets(root):
     root.columnconfigure(0, weight=1)
     root.rowconfigure(0, weight=1)
     frame.columnconfigure(0, weight=1)
-    frame.rowconfigure(1, weight=1)
-    frame.rowconfigure(3, weight=1)
+    frame.rowconfigure(2, weight=1)
+    frame.rowconfigure(4, weight=1)
 
     title = ttk.Label(frame, text="Execution Satellite", font=("TkDefaultFont", 16, "bold"))
     title.grid(row=0, column=0, sticky="w", pady=(0, 10))
+
+    path_frame = ttk.LabelFrame(frame, text="Execution locations", padding=8)
+    path_frame.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+    path_frame.columnconfigure(1, weight=1)
+    add_path_row(
+        path_frame,
+        0,
+        "Launch folder",
+        "execpath.staging-folder",
+        "Must be completely blank when Go is pressed. The satellite owns its contents during the queue run.",
+    )
+    add_path_row(
+        path_frame,
+        1,
+        "Leonardo save folder",
+        "execpath.leonardo-save-folder",
+        "Leonardo must save the generated Untitled.LDS file here.",
+    )
 
     columns = ("state", "job", "job-id", "expires")
     tree = ttk.Treeview(frame, columns=columns, show="headings", selectmode="browse")
@@ -54,32 +75,52 @@ def create_widgets(root):
     tree.column("job", width=220)
     tree.column("job-id", width=240)
     tree.column("expires", width=230)
-    tree.grid(row=1, column=0, sticky="nsew")
+    tree.grid(row=2, column=0, sticky="nsew")
     tree.bind("<<TreeviewSelect>>", handle_selection)
 
     controls = ttk.Frame(frame)
-    controls.grid(row=2, column=0, sticky="ew", pady=10)
+    controls.grid(row=3, column=0, sticky="ew", pady=10)
     refresh_button = ttk.Button(controls, text="Refresh", command=refresh_queue)
     refresh_button.pack(side="left")
     start_button = ttk.Button(controls, text="Start Pending Queue", command=start_queue)
     start_button.pack(side="left", padx=(8, 0))
+    checklist_button = ttk.Button(controls, text="Preflight Checklist", command=show_preflight_checklist)
+    checklist_button.pack(side="left", padx=(8, 0))
     pending_var = tk.StringVar(value="")
     ttk.Label(controls, textvariable=pending_var).pack(side="right")
 
     details = tk.Text(frame, height=14, wrap="word", state="disabled")
-    details.grid(row=3, column=0, sticky="nsew")
+    details.grid(row=4, column=0, sticky="nsew")
 
     status_var = tk.StringVar(value="Ready.")
-    ttk.Label(frame, textvariable=status_var, anchor="w").grid(row=4, column=0, sticky="ew", pady=(8, 0))
+    ttk.Label(frame, textvariable=status_var, anchor="w").grid(row=5, column=0, sticky="ew", pady=(8, 0))
 
     g["widgets"] = {
         "tree": tree,
         "refresh": refresh_button,
         "start": start_button,
+        "checklist": checklist_button,
         "pending-var": pending_var,
         "details": details,
         "status-var": status_var,
     }
+
+
+def add_path_row(parent, row, label, key, help_text):
+    variable = tk.StringVar(value=str(g["config"][key]))
+    g["path-vars"][key] = variable
+    ttk.Label(parent, text=label).grid(row=row * 2, column=0, sticky="w", padx=(0, 8), pady=3)
+    entry = ttk.Entry(parent, textvariable=variable)
+    entry.grid(row=row * 2, column=1, sticky="ew", pady=3)
+    ttk.Button(parent, text="Browse", command=lambda: browse_path(variable)).grid(
+        row=row * 2, column=2, padx=(8, 0), pady=3
+    )
+    ttk.Button(parent, text="Open", command=lambda: open_path(variable)).grid(
+        row=row * 2, column=3, padx=(6, 0), pady=3
+    )
+    ttk.Label(parent, text=help_text, foreground="#555555").grid(
+        row=row * 2 + 1, column=1, columnspan=3, sticky="w", pady=(0, 4)
+    )
 
 
 def refresh_queue():
@@ -145,9 +186,19 @@ def start_queue():
     if not pending:
         messagebox.showinfo("Execution Satellite", "There are no pending jobs.")
         return
+    sync_runtime_paths()
+    problems = core.validate_queue_preflight(pending, g["config"])
+    if problems:
+        messagebox.showerror(
+            "Execution Satellite — unsafe to launch",
+            "\n\n".join(problems),
+        )
+        return
     if not messagebox.askokcancel(
         "Launch queue",
         f"Run {len(pending)} pending job(s)?\n\n"
+        "The launch folder is blank. From this point until the queue ends, "
+        "the satellite is authorized to clear and reuse its contents.\n\n"
         "Prepare Leonardo Design Studio and the execution desktop before continuing.",
     ):
         return
@@ -189,7 +240,7 @@ def _run_queue(entries):
                 entry["job-id"],
                 attempt,
             )
-            outcome = core.execute_inputlog(entry["request"], g["config"], run_dir)
+            outcome = core.execute_job(entry["request"], g["config"], run_dir)
             if outcome["normal"]:
                 response = core.make_response(entry["request"], outcome)
                 core.complete_entry(entry, response, outcome)
@@ -308,6 +359,7 @@ def set_controls_enabled(enabled):
     state = "normal" if enabled else "disabled"
     g["widgets"]["refresh"].configure(state=state)
     g["widgets"]["start"].configure(state=state)
+    g["widgets"]["checklist"].configure(state=state)
 
 
 def set_status(message):
@@ -320,3 +372,46 @@ def show_details(text):
     details.delete("1.0", tk.END)
     details.insert("1.0", text)
     details.configure(state="disabled")
+
+
+def sync_runtime_paths():
+    for key, variable in g["path-vars"].items():
+        raw = variable.get().strip()
+        if not raw:
+            continue
+        g["config"][key] = Path(raw).expanduser().resolve()
+
+
+def browse_path(variable):
+    selected = filedialog.askdirectory(initialdir=variable.get().strip() or None)
+    if selected:
+        variable.set(selected)
+
+
+def open_path(variable):
+    path = Path(variable.get().strip()).expanduser()
+    if not path.is_dir():
+        messagebox.showerror("Execution Satellite", f"Folder does not exist:\n{path}")
+        return
+    os.startfile(path)
+
+
+def show_preflight_checklist():
+    sync_runtime_paths()
+    pending = [entry for entry in g["entries"] if entry["state"] == "pending"]
+    problems = core.validate_queue_preflight(pending, g["config"])
+    automatic = "Automatic checks passed." if not problems else "\n".join(f"• {item}" for item in problems)
+    generated = core.get_leonardo_output_path(g["config"])
+    messagebox.showinfo(
+        "Execution Satellite — preflight checklist",
+        "AUTOMATIC CHECKS\n"
+        f"{automatic}\n\n"
+        "HUMAN CHECKS\n"
+        "• The launch folder is open in the file-manager window expected by InputLog.\n"
+        "• Leonardo Design Studio is open on the left-side screen.\n"
+        "• Leonardo is configured to save generated layouts here:\n"
+        f"  {generated}\n"
+        "• The printer and required print settings are ready.\n"
+        "• The desktop layout matches the InputLog recordings.\n"
+        "• You will not touch the mouse or keyboard during playback.",
+    )

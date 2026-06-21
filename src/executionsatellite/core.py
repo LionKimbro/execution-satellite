@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from datetime import datetime
@@ -217,17 +218,6 @@ def execute_inputlog(request, config, run_dir):
                 "message": message,
                 "error": {"type": "InputLogExitError", "message": message},
             }
-        missing = [str(path) for path in request["output"].values() if not path.is_file()]
-        if missing:
-            message = "InputLog completed normally, but requested output was not found: " + ", ".join(missing)
-            return {
-                **base,
-                "kind": "missing-output",
-                "normal": False,
-                "status": "failed",
-                "message": message,
-                "error": {"type": "MissingOutput", "message": message},
-            }
         return {
             **base,
             "kind": "normal",
@@ -258,6 +248,124 @@ def execute_inputlog(request, config, run_dir):
         "message": message,
         "error": error,
     }
+
+
+def execute_job(request, config, run_dir):
+    """Stage one request, run InputLog, collect output, and clear staging."""
+    staging = config["execpath.staging-folder"]
+    outcome = None
+    try:
+        clear_directory(staging)
+        stage_request_input(request, staging)
+        prepare_layout_output(request, config)
+        outcome = execute_inputlog(request, config, run_dir)
+        if outcome["normal"]:
+            collect_job_output(request, config)
+        elif request["job"] == "layout_sticker_to_lds":
+            generated = get_leonardo_output_path(config)
+            if generated.exists():
+                generated.unlink()
+        return outcome
+    except Exception as exc:
+        return {
+            "kind": "job-adapter-error",
+            "normal": False,
+            "status": "failed",
+            "started-at": outcome.get("started-at") if outcome else None,
+            "finished-at": now_string(),
+            "message": f"Execution Satellite could not prepare or collect the job: {exc}",
+            "error": {"type": type(exc).__name__, "message": str(exc)},
+            "report": outcome.get("report") if outcome else None,
+            "stdout": outcome.get("stdout", "") if outcome else "",
+            "stderr": outcome.get("stderr", "") if outcome else "",
+            "returncode": outcome.get("returncode") if outcome else None,
+        }
+    finally:
+        clear_directory(staging)
+
+
+def validate_queue_preflight(entries, config):
+    """Automatic checks that must pass at the instant the operator says Go."""
+    staging = config["execpath.staging-folder"]
+    save_folder = config["execpath.leonardo-save-folder"]
+    problems = []
+
+    if not staging.is_dir():
+        problems.append(f"Launch folder does not exist: {staging}")
+    elif any(staging.iterdir()):
+        problems.append(
+            "Hey, wait, wait, this doesn't look safe. "
+            f"The launch folder is not blank: {staging}"
+        )
+
+    if not save_folder.is_dir():
+        problems.append(f"Leonardo save folder does not exist: {save_folder}")
+
+    has_layout = any(entry["job"] == "layout_sticker_to_lds" for entry in entries)
+    if has_layout and save_folder.is_dir():
+        generated = get_leonardo_output_path(config)
+        if generated.exists():
+            problems.append(
+                f"Leonardo's expected output file already exists: {generated}. "
+                "Move or delete it before launching the queue."
+            )
+
+    for entry in entries:
+        request = entry["request"]
+        for key, path in request["input"].items():
+            if not path.is_file():
+                problems.append(f"{entry['job-id']} input.{key} does not exist: {path}")
+        for key, path in request["output"].items():
+            if path.exists():
+                problems.append(f"{entry['job-id']} output.{key} already exists: {path}")
+
+    return problems
+
+
+def stage_request_input(request, staging):
+    source = next(iter(request["input"].values()))
+    if not source.is_file():
+        raise FileNotFoundError(f"request input does not exist: {source}")
+    destination = staging / source.name
+    shutil.copy2(source, destination)
+    return destination
+
+
+def prepare_layout_output(request, config):
+    if request["job"] != "layout_sticker_to_lds":
+        return
+    generated = get_leonardo_output_path(config)
+    if generated.exists():
+        raise FileExistsError(f"Leonardo output already exists: {generated}")
+    requested = request["output"]["lds_file_path"]
+    if requested.exists():
+        raise FileExistsError(f"requested output already exists: {requested}")
+
+
+def collect_job_output(request, config):
+    if request["job"] != "layout_sticker_to_lds":
+        return
+    generated = get_leonardo_output_path(config)
+    if not generated.is_file():
+        raise FileNotFoundError(f"Leonardo did not create the expected output: {generated}")
+    requested = request["output"]["lds_file_path"]
+    requested.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(generated), str(requested))
+
+
+def get_leonardo_output_path(config):
+    return config["execpath.leonardo-save-folder"] / config["leonardo.output-filename"]
+
+
+def clear_directory(path):
+    """Clear a dedicated staging directory whose emptiness authorized this run."""
+    if not path.is_dir():
+        return
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
 
 
 def read_inputlog_report(path, expected_recording, started_at):

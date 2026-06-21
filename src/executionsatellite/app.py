@@ -72,6 +72,19 @@ def cmd_doctor():
     missing = [name for name in required if name not in available]
     if missing:
         raise SystemExit("Missing required InputLog recording(s): " + ", ".join(missing))
+    staging = config["execpath.staging-folder"]
+    save_folder = config["execpath.leonardo-save-folder"]
+    if not staging.is_dir():
+        raise SystemExit(f"Launch folder does not exist: {staging}")
+    if any(staging.iterdir()):
+        raise SystemExit(f"Launch folder is not blank: {staging}")
+    if not save_folder.is_dir():
+        raise SystemExit(f"Leonardo save folder does not exist: {save_folder}")
+    generated = core.get_leonardo_output_path(config)
+    if generated.exists():
+        raise SystemExit(f"Leonardo expected output already exists: {generated}")
+    print(f"Launch folder: {staging}")
+    print(f"Leonardo save folder: {save_folder}")
     print("Execution Satellite preflight passed.")
 
 
@@ -87,6 +100,12 @@ def declare():
     app.describe_key("projpath.runs", "Satellite-owned InputLog reports and terminal job records.")
     app.declare_key("execpath.inputlog-root", "C:/lion/installed/inputlog")
     app.describe_key("execpath.inputlog-root", "InputLog project root containing its .inputlog recordings.")
+    app.declare_key("execpath.staging-folder", "C:/Users/Robert/Launch")
+    app.describe_key("execpath.staging-folder", "Dedicated blank folder whose single staged file is consumed by InputLog.")
+    app.declare_key("execpath.leonardo-save-folder", "D:/tmp")
+    app.describe_key("execpath.leonardo-save-folder", "Folder where Leonardo Design Studio saves its generated LDS file.")
+    app.declare_key("leonardo.output-filename", "Untitled.LDS")
+    app.describe_key("leonardo.output-filename", "Filename Leonardo Design Studio creates for the layout recording.")
     app.declare_key("inputlog.command", "inputlog")
     app.describe_key("inputlog.command", "InputLog executable or command path.")
     app.declare_key("recording.layout", "layout")
@@ -120,6 +139,9 @@ def get_config():
         "projpath.inbox": app.ctx["projpath.inbox"],
         "projpath.runs": app.ctx["projpath.runs"],
         "execpath.inputlog-root": app.ctx["execpath.inputlog-root"],
+        "execpath.staging-folder": app.ctx["execpath.staging-folder"],
+        "execpath.leonardo-save-folder": app.ctx["execpath.leonardo-save-folder"],
+        "leonardo.output-filename": app.ctx["leonardo.output-filename"],
         "inputlog.command": app.ctx["inputlog.command"],
         "recording.layout": app.ctx["recording.layout"],
         "recording.print": app.ctx["recording.print"],

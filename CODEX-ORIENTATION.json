@@ -95,6 +95,14 @@
       "Responses report only what the satellite actually knows, distinguishing automation completion and observed files from business or physical-print certainty.",
       "The recommended v1 submission model copies request JSON into the satellite inbox while retaining full paths back to the requester-owned job cell."
     ],
+    "inputlog-staging": [
+      "InputLog consumes one staged file from a dedicated launch folder, currently defaulting to C:\\Users\\Robert\\Launch.",
+      "At the instant the operator says Go, the launch folder must exist and be completely empty. A nonblank folder is a hard safety stop and the satellite deletes nothing.",
+      "Blank-at-Go authorizes the satellite to own, clear, and reuse the launch folder contents for the duration of that launched queue, including cleanup after failures.",
+      "print_lds_file copies the requester LDS file into the launch folder, runs print-sticker, then clears the launch folder.",
+      "layout_sticker_to_lds copies the requester sticker image into the launch folder, runs layout, moves the configured Leonardo output file to the requester output path, then clears the launch folder.",
+      "Leonardo currently saves generated layouts as D:\\tmp\\Untitled.LDS; both the save folder and output filename are configurable."
+    ],
     "inputlog-integration": [
       "Invoke playback as: inputlog play --recording <name-of-recording> --report <path-to-report-json>.",
       "Run InputLog with C:\\lion\\installed\\inputlog as its default working directory; this is the universal installed InputLog project root containing the production recordings.",
