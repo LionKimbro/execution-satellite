@@ -171,6 +171,7 @@ def handle_selection(_event=None):
             "state": entry["state"],
             "job_id": request["job_id"],
             "job": request["job"],
+            "title": request.get("title", ""),
             "input": {key: str(path) for key, path in request["input"].items()},
             "output": {key: str(path) for key, path in request["output"].items()},
             "response_path": str(request["response_path"]),

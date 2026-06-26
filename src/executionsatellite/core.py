@@ -127,11 +127,15 @@ def normalize_request(data, now=None):
 
     response_path = require_absolute_path(data["response_path"], "response_path")
     current = now or datetime.now().astimezone()
+    title = data.get("title", "")
+    if title is not None and not isinstance(title, str):
+        raise ValueError("title must be a string")
 
     return {
         "schema": REQUEST_SCHEMA,
         "job_id": job_id,
         "job": job,
+        "title": (title or "").strip(),
         "created_at": created_at.isoformat(),
         "expires_at": expires_at.isoformat(),
         "input": normalized_input,

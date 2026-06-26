@@ -72,9 +72,12 @@ def fake_inputlog(monkeypatch, report, returncode=0):
 
 
 def test_normalize_layout_request(tmp_path):
-    request = core.normalize_request(make_request(tmp_path))
+    data = make_request(tmp_path)
+    data["title"] = "Building sticker sheet for Gengar"
+    request = core.normalize_request(data)
 
     assert request["job_id"] == "job-test-001"
+    assert request["title"] == "Building sticker sheet for Gengar"
     assert request["input"]["sticker_image_path"].is_absolute()
     assert request["output"]["lds_file_path"].is_absolute()
     assert request["expired"] is False
