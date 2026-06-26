@@ -31,6 +31,7 @@ JOB_SPECS = {
         "outputs": [],
     },
 }
+PENDING_STATES = {"pending"}
 
 
 def scan_inbox(inbox, runs, now=None):
@@ -43,6 +44,35 @@ def scan_inbox(inbox, runs, now=None):
         entries.append(load_queue_entry(path, runs, now))
 
     return entries
+
+
+def clear_non_pending_entries(entries):
+    """Delete local queue entries that are not still pending."""
+    results = []
+    for entry in entries:
+        if is_pending_entry(entry):
+            results.append({"job-id": entry["job-id"], "state": entry["state"], "fate": "kept"})
+            continue
+        delete_queue_entry(entry)
+        results.append({"job-id": entry["job-id"], "state": entry["state"], "fate": "deleted"})
+    return results
+
+
+def delete_queue_entry(entry):
+    """Delete the satellite-owned inbox copy and terminal local record for one job."""
+    source_path = entry.get("source-path")
+    if source_path is not None and source_path.exists():
+        source_path.unlink()
+
+    record_path = entry.get("record-path")
+    if record_path is not None and record_path.exists():
+        record_dir = record_path.parent
+        if record_dir.exists():
+            shutil.rmtree(record_dir)
+
+
+def is_pending_entry(entry):
+    return entry.get("state") in PENDING_STATES
 
 
 def load_queue_entry(path, runs, now=None):

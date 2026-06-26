@@ -119,6 +119,33 @@ def test_scan_inbox_marks_invalid_expired_and_recorded(tmp_path):
     }
 
 
+def test_clear_non_pending_entries_keeps_pending_and_deletes_terminal_items(tmp_path):
+    inbox = tmp_path / "inbox"
+    runs = tmp_path / "runs"
+    inbox.mkdir()
+
+    pending = make_request(tmp_path / "pending")
+    pending["job_id"] = "job-pending"
+    (inbox / "pending.json").write_text(json.dumps(pending), encoding="utf-8")
+
+    done = make_request(tmp_path / "done")
+    done["job_id"] = "job-done"
+    (inbox / "done.json").write_text(json.dumps(done), encoding="utf-8")
+    done_record_path = core.get_record_path(runs, done["job_id"])
+    core.write_json_atomic(done_record_path, {"state": "done", "message": "already ran"})
+
+    entries = core.scan_inbox(inbox, runs)
+    results = core.clear_non_pending_entries(entries)
+
+    assert sorted((item["state"], item["fate"]) for item in results) == [
+        ("done", "deleted"),
+        ("pending", "kept"),
+    ]
+    assert (inbox / "pending.json").exists()
+    assert not (inbox / "done.json").exists()
+    assert not done_record_path.exists()
+
+
 def test_execute_layout_requires_requested_output(tmp_path, monkeypatch):
     request = core.normalize_request(make_request(tmp_path))
     config = make_config(tmp_path)
