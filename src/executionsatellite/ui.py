@@ -40,6 +40,7 @@ def run(config):
 
 
 def create_widgets(root):
+    g["root"] = root
     frame = ttk.Frame(root, padding=12)
     frame.grid(row=0, column=0, sticky="nsew")
     root.columnconfigure(0, weight=1)
@@ -208,19 +209,25 @@ def start_queue():
             "\n\n".join(problems),
         )
         return
-    if not messagebox.askokcancel(
-        "Launch queue",
-        f"Run {len(pending)} pending job(s)?\n\n"
-        "The launch folder is blank. From this point until the queue ends, "
-        "the satellite is authorized to clear and reuse its contents.\n\n"
-        "Prepare Leonardo Design Studio and the execution desktop before continuing.",
-    ):
+    if not show_preflight_checklist_dialog(pending, "launch"):
         return
 
     g["running"] = True
     set_controls_enabled(False)
-    set_status(f"Running {len(pending)} job(s). Do not touch mouse or keyboard during playback.")
-    worker = threading.Thread(target=run_queue, args=(pending,), daemon=True)
+    start_countdown(pending, 3)
+
+
+def start_countdown(entries, count):
+    if count > 0:
+        set_status(
+            f"Starting in {count}... Hands off the mouse and keyboard. "
+            "Let any click or keystroke settle."
+        )
+        g["root"].after(1000, lambda: start_countdown(entries, count - 1))
+        return
+
+    set_status(f"Running {len(entries)} job(s). Do not touch mouse or keyboard during playback.")
+    worker = threading.Thread(target=run_queue, args=(entries,), daemon=True)
     worker.start()
 
 
@@ -613,19 +620,151 @@ def open_path(variable):
 def show_preflight_checklist():
     sync_runtime_paths()
     pending = [entry for entry in g["entries"] if entry["state"] == "pending"]
+    if not pending:
+        messagebox.showinfo("Execution Satellite — preflight checklist", "There are no pending jobs.")
+        return
     problems = core.validate_queue_preflight(pending, g["config"])
-    automatic = "Automatic checks passed." if not problems else "\n".join(f"• {item}" for item in problems)
-    generated = core.get_leonardo_output_path(g["config"])
-    messagebox.showinfo(
-        "Execution Satellite — preflight checklist",
-        "AUTOMATIC CHECKS\n"
-        f"{automatic}\n\n"
-        "HUMAN CHECKS\n"
-        "• The launch folder is open in the file-manager window expected by InputLog.\n"
-        "• Leonardo Design Studio is open on the left-side screen.\n"
-        "• Leonardo is configured to save generated layouts here:\n"
-        f"  {generated}\n"
-        "• The printer and required print settings are ready.\n"
-        "• The desktop layout matches the InputLog recordings.\n"
-        "• You will not touch the mouse or keyboard during playback.",
+    if problems:
+        messagebox.showerror(
+            "Execution Satellite — unsafe to launch",
+            "\n\n".join(problems),
+        )
+        return
+    show_preflight_checklist_dialog(pending, "review")
+
+
+def show_preflight_checklist_dialog(entries, mode):
+    checklist = build_preflight_checklist(entries, g["config"])
+    dialog = tk.Toplevel(g["root"])
+    dialog.title("Execution Satellite — preflight checklist")
+    dialog.transient(g["root"])
+    dialog.grab_set()
+    dialog.geometry("720x520")
+    dialog.columnconfigure(0, weight=1)
+    dialog.rowconfigure(1, weight=1)
+    state = {"accepted": False}
+
+    intro_text = (
+        f"Review {len(entries)} pending job(s). Check every applicable item before launch."
+        if mode == "launch"
+        else f"Checklist for {len(entries)} pending job(s)."
     )
+    intro = ttk.Label(dialog, text=intro_text, padding=(12, 12, 12, 4), wraplength=680)
+    intro.grid(row=0, column=0, sticky="ew")
+
+    canvas = tk.Canvas(dialog, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(dialog, orient="vertical", command=canvas.yview)
+    content = ttk.Frame(canvas, padding=(12, 8, 12, 8))
+    content.columnconfigure(0, weight=1)
+    window_id = canvas.create_window((0, 0), window=content, anchor="nw")
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.grid(row=1, column=0, sticky="nsew")
+    scrollbar.grid(row=1, column=1, sticky="ns")
+
+    def sync_scroll_region(event=None):
+        canvas.configure(scrollregion=canvas.bbox("all"))
+        canvas.itemconfigure(window_id, width=canvas.winfo_width())
+
+    content.bind("<Configure>", sync_scroll_region)
+    canvas.bind("<Configure>", sync_scroll_region)
+
+    variables = []
+    row = 0
+    for section in checklist:
+        label = ttk.Label(content, text=section["title"], font=("TkDefaultFont", 10, "bold"))
+        label.grid(row=row, column=0, sticky="w", pady=(8, 4))
+        row += 1
+        for item in section["items"]:
+            variable = tk.BooleanVar(value=False)
+            variables.append(variable)
+            check = ttk.Checkbutton(content, text=item, variable=variable)
+            check.grid(row=row, column=0, sticky="w", pady=2)
+            row += 1
+
+    warning = ttk.Label(
+        content,
+        text=(
+            "When you press Launch, the blank launch folder becomes satellite-owned "
+            "for the duration of this queue run. Do not touch the mouse or keyboard during playback."
+        ),
+        foreground="#8a4b00",
+        wraplength=660,
+    )
+    warning.grid(row=row, column=0, sticky="ew", pady=(14, 4))
+
+    button_row = ttk.Frame(dialog, padding=12)
+    button_row.grid(row=2, column=0, columnspan=2, sticky="e")
+    primary_text = "Launch Queue" if mode == "launch" else "Done"
+    primary = ttk.Button(button_row, text=primary_text)
+    cancel = ttk.Button(button_row, text="Cancel", command=dialog.destroy)
+    primary.pack(side="left")
+    cancel.pack(side="left", padx=(8, 0))
+
+    def all_checked():
+        return all(variable.get() for variable in variables)
+
+    def update_primary_state(*_args):
+        if mode == "review":
+            primary.configure(state="normal")
+            return
+        primary.configure(state="normal" if all_checked() else "disabled")
+
+    def accept():
+        if mode == "launch" and not all_checked():
+            return
+        state["accepted"] = True
+        dialog.destroy()
+
+    for variable in variables:
+        variable.trace_add("write", update_primary_state)
+    primary.configure(command=accept)
+    update_primary_state()
+
+    dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
+    dialog.wait_window()
+    return state["accepted"]
+
+
+def build_preflight_checklist(entries, config):
+    jobs = {entry["job"] for entry in entries}
+    launch_folder = config["execpath.staging-folder"]
+    leonardo_output = core.get_leonardo_output_path(config)
+    sections = []
+
+    if "layout_sticker_to_lds" in jobs:
+        sections.append(
+            {
+                "title": "layout_sticker_to_lds",
+                "items": [
+                    "Leonardo Design Studio is open on the left display",
+                    "Launch folder is open on the left side of the right display",
+                    f"Launch folder is open to {launch_folder}",
+                    f'"Save As" in Leonardo Design Studio saves to {leonardo_output}',
+                ],
+            }
+        )
+
+    if "print_lds_file" in jobs:
+        sections.append(
+            {
+                "title": "print_lds_file",
+                "items": [
+                    "Leonardo Design Studio is open on the left display",
+                    "Launch folder is open on the left side of the right display",
+                    f"Launch folder is open to {launch_folder}",
+                    "The printer is on.",
+                    "The printer is loaded with paper.",
+                ],
+            }
+        )
+
+    sections.append(
+        {
+            "title": "always",
+            "items": [
+                "You will not touch the mouse or keyboard during playback.",
+            ],
+        }
+    )
+
+    return sections
